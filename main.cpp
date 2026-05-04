@@ -4,6 +4,7 @@
 #include "Domain/Stock/StockBar.h"
 #include "Repository/InMemory/InMemoryStockBarRepository.h"
 #include "Service/Inventory/InventoryService.h"
+#include "Service/Optimization/CutPlanApplier.h"
 #include "Service/Optimization/OptimizationPreparationService.h"
 #include "Service/Optimization/OptimizationService.h"
 #include <iostream>
@@ -30,29 +31,53 @@ int main() {
     InventoryService inventory(stockRepository);
     OptimizationPreparationService preparation(inventory);
     OptimizationService optimizer;
+    CutPlanApplier planApplier(inventory);
 
     std::vector<OptimizationProblem> problems =
         preparation.prepare(requestItems);
 
     for (const auto &problem : problems) {
         CutPlan plan = optimizer.optimize(problem);
+        planApplier.apply(plan);
 
         std::cout << "Cut plan for material: " << problem.materialId << '\n';
 
         for (const auto &barPlan : plan.bars) {
             std::cout << "Bar " << barPlan.stockBar.getId() << ":\n";
+            double cutLoss =
+                barPlan.stockBar.getProfile().getMaterial().getDefaultCutLoss();
 
             for (const auto &piece : barPlan.pieces) {
                 std::cout << "  piece " << piece.getId() << ": "
-                          << piece.getLength() << '\n';
+                          << piece.getLength() << " + cut loss " << cutLoss
+                          << '\n';
             }
 
+            std::cout << "  original: " << barPlan.stockBar.getOriginalLength()
+                      << '\n';
+            std::cout << "  used including cut loss: " << barPlan.usedLength
+                      << '\n';
             std::cout << "  remaining: " << barPlan.remainingLength << '\n';
         }
 
         std::cout << "Total waste: " << plan.totalWaste << '\n';
-        std::cout << "Unassigned pieces: " << plan.unassignedPieces.size()
-                  << '\n';
+        std::cout << "Unassigned pieces: " << plan.unassignedPieces.size();
+
+        if (!plan.unassignedPieces.empty()) {
+            std::cout << '\n';
+            for (const auto &piece : plan.unassignedPieces) {
+                std::cout << "  piece " << piece.getId() << ": "
+                          << piece.getLength() << '\n';
+            }
+        } else {
+            std::cout << '\n';
+        }
+    }
+
+    std::cout << "\nInventory after applying plan:\n";
+    for (const auto &bar : inventory.getAllBars()) {
+        std::cout << "Bar " << bar.getId()
+                  << " remaining: " << bar.getRemainingLength() << '\n';
     }
 
     return 0;

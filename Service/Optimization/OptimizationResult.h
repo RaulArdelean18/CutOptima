@@ -13,11 +13,12 @@ struct CutAssignment {
 struct BarCutPlan {
     StockBar stockBar;
     std::vector<CutPiece> pieces;
-    double remainingLength;
+    double usedLength = 0.0;
+    double remainingLength = 0.0;
 };
 
 struct CutPlan {
     std::vector<BarCutPlan> bars;
     std::vector<CutPiece> unassignedPieces;
-    double totalWaste;
+    double totalWaste = 0.0;
 };

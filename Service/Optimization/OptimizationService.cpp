@@ -19,12 +19,16 @@ OptimizationService::optimize(const OptimizationProblem &problem) const {
         double bestRemainingAfterCut = std::numeric_limits<double>::max();
 
         for (int i = 0; i < static_cast<int>(bars.size()); i++) {
-            if (!bars[i].canFit(piece.getLength())) {
+            double cutLoss =
+                bars[i].getProfile().getMaterial().getDefaultCutLoss();
+            double requiredLength = piece.getLength() + cutLoss;
+
+            if (!bars[i].canFit(requiredLength)) {
                 continue;
             }
 
             double remainingAfterCut =
-                bars[i].getRemainingLength() - piece.getLength();
+                bars[i].getRemainingLength() - requiredLength;
             if (remainingAfterCut < bestRemainingAfterCut) {
                 bestBarIndex = i;
                 bestRemainingAfterCut = remainingAfterCut;
@@ -36,7 +40,11 @@ OptimizationService::optimize(const OptimizationProblem &problem) const {
             continue;
         }
 
-        bars[bestBarIndex].consume(piece.getLength());
+        double cutLoss =
+            bars[bestBarIndex].getProfile().getMaterial().getDefaultCutLoss();
+        double requiredLength = piece.getLength() + cutLoss;
+
+        bars[bestBarIndex].consume(requiredLength);
 
         auto existingPlan = std::find_if(
             barPlans.begin(), barPlans.end(), [&](const BarCutPlan &plan) {
@@ -47,11 +55,13 @@ OptimizationService::optimize(const OptimizationProblem &problem) const {
             BarCutPlan plan;
             plan.stockBar = bars[bestBarIndex];
             plan.pieces.push_back(piece);
+            plan.usedLength = requiredLength;
             plan.remainingLength = bars[bestBarIndex].getRemainingLength();
             barPlans.push_back(plan);
         } else {
             existingPlan->stockBar = bars[bestBarIndex];
             existingPlan->pieces.push_back(piece);
+            existingPlan->usedLength += requiredLength;
             existingPlan->remainingLength =
                 bars[bestBarIndex].getRemainingLength();
         }

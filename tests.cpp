@@ -7,6 +7,7 @@
 #include "Repository/InMemory/InMemoryMaterialRepository.h"
 #include "Repository/InMemory/InMemoryStockBarRepository.h"
 #include "Service/Inventory/InventoryService.h"
+#include "Service/Optimization/CutPlanApplier.h"
 #include "Service/Optimization/OptimizationPreparationService.h"
 #include "Service/Optimization/OptimizationService.h"
 #include "Service/Request/CutPieceFactory.h"
@@ -480,7 +481,7 @@ void testOptimizationPreparationFallsBackToGlobalProblem() {
 }
 
 void testOptimizationServiceFitsPiecesIntoOneBar() {
-    Material material("mat1", "Aluminum", 3.0, true);
+    Material material("mat1", "Aluminum", 0.0, true);
     BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 6000.0,
                        120.0);
 
@@ -511,7 +512,7 @@ void testOptimizationServiceFitsPiecesIntoOneBar() {
 }
 
 void testOptimizationServiceUsesMultipleBars() {
-    Material material("mat1", "Aluminum", 3.0, true);
+    Material material("mat1", "Aluminum", 0.0, true);
     BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 5000.0,
                        120.0);
 
@@ -539,7 +540,7 @@ void testOptimizationServiceUsesMultipleBars() {
 }
 
 void testOptimizationServiceLeavesOversizedPiecesUnassigned() {
-    Material material("mat1", "Aluminum", 3.0, true);
+    Material material("mat1", "Aluminum", 0.0, true);
     BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 5000.0,
                        120.0);
 
@@ -569,6 +570,92 @@ void testOptimizationServiceLeavesOversizedPiecesUnassigned() {
         "OptimizationService total waste with unassigned piece is wrong.");
 }
 
+void testOptimizationServiceUsesCutLoss() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material,
+                       6000.0, 120.0);
+
+    OptimizationProblem problem;
+    problem.materialId = "mat1";
+    problem.stockBars = {
+        StockBar("stock1", "BARCODE-0001", profile, 6000.0, 6000.0),
+    };
+    problem.pieces = {
+        CutPiece("piece1", "req1", 1500.0),
+        CutPiece("piece2", "req1", 1200.0),
+    };
+
+    OptimizationService service;
+    CutPlan plan = service.optimize(problem);
+
+    require(plan.bars.size() == 1,
+            "OptimizationService should assign kerf test pieces.");
+    requireDouble(plan.bars[0].usedLength, 2706.0,
+                  "OptimizationService should include cut loss in used length.");
+    requireDouble(plan.bars[0].remainingLength, 3294.0,
+                  "OptimizationService remaining length should include cut loss.");
+    requireDouble(plan.totalWaste, 3294.0,
+                  "OptimizationService total waste should include cut loss.");
+}
+
+void testCutPlanApplierUpdatesInventory() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material,
+                       6000.0, 120.0);
+
+    InMemoryStockBarRepository repository;
+    repository.save(
+        StockBar("stock1", "BARCODE-0001", profile, 6000.0, 6000.0));
+    repository.save(
+        StockBar("stock2", "BARCODE-0002", profile, 6000.0, 6000.0));
+
+    InventoryService inventory(repository);
+    OptimizationProblem problem;
+    problem.materialId = "mat1";
+    problem.stockBars = inventory.getAvailableBars();
+    problem.pieces = {
+        CutPiece("piece1", "req1", 1500.0),
+        CutPiece("piece2", "req1", 1200.0),
+        CutPiece("piece3", "req1", 900.0),
+    };
+
+    OptimizationService optimizer;
+    CutPlan plan = optimizer.optimize(problem);
+
+    CutPlanApplier applier(inventory);
+    applier.apply(plan);
+
+    requireDouble(repository.findById("stock1")->getRemainingLength(), 2391.0,
+                  "CutPlanApplier should update first stock bar.");
+    requireDouble(repository.findById("stock2")->getRemainingLength(), 6000.0,
+                  "CutPlanApplier should not update unused stock bar.");
+}
+
+void testCutPlanApplierRejectsMissingStockBar() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material,
+                       6000.0, 120.0);
+
+    InMemoryStockBarRepository repository;
+    InventoryService inventory(repository);
+
+    CutPlan plan;
+    BarCutPlan barPlan;
+    barPlan.stockBar =
+        StockBar("missing", "BARCODE-0001", profile, 6000.0, 6000.0);
+    barPlan.pieces = {
+        CutPiece("piece1", "req1", 1500.0),
+    };
+    barPlan.usedLength = 1503.0;
+    barPlan.remainingLength = 4500.0;
+    plan.bars.push_back(barPlan);
+    plan.totalWaste = 4500.0;
+
+    CutPlanApplier applier(inventory);
+    requireThrows([&] { applier.apply(plan); },
+                  "CutPlanApplier should reject missing stock bar.");
+}
+
 int main() {
     testDomainValidationRejectsInvalidValues();
     testMaterialAndBarProfileSetters();
@@ -593,6 +680,9 @@ int main() {
     testOptimizationServiceFitsPiecesIntoOneBar();
     testOptimizationServiceUsesMultipleBars();
     testOptimizationServiceLeavesOversizedPiecesUnassigned();
+    testOptimizationServiceUsesCutLoss();
+    testCutPlanApplierUpdatesInventory();
+    testCutPlanApplierRejectsMissingStockBar();
 
     std::cout << "All tests passed.\n";
     return 0;
