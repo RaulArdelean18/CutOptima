@@ -8,6 +8,7 @@
 #include "Repository/InMemory/InMemoryStockBarRepository.h"
 #include "Service/Inventory/InventoryService.h"
 #include "Service/Optimization/OptimizationPreparationService.h"
+#include "Service/Optimization/OptimizationService.h"
 #include "Service/Request/CutPieceFactory.h"
 #include "Service/Request/RequestPartitioner.h"
 #include <cmath>
@@ -103,8 +104,7 @@ void testMaterialAndBarProfileSetters() {
 
     require(profile.getName() == "Updated Profile",
             "BarProfile name setter failed.");
-    require(profile.getBarcode() == "P2",
-            "BarProfile barcode setter failed.");
+    require(profile.getBarcode() == "P2", "BarProfile barcode setter failed.");
     requireDouble(profile.getStandardLength(), 2000.0,
                   "BarProfile standard length setter failed.");
     requireDouble(profile.getPurchasePrice(), 25.0,
@@ -115,8 +115,9 @@ void testMaterialAndBarProfileSetters() {
                   "BarProfile should reject empty barcode in setter.");
     requireThrows([&] { profile.setStandardLength(0.0); },
                   "BarProfile should reject zero standard length in setter.");
-    requireThrows([&] { profile.setPurchasePrice(-1.0); },
-                  "BarProfile should reject negative purchase price in setter.");
+    requireThrows(
+        [&] { profile.setPurchasePrice(-1.0); },
+        "BarProfile should reject negative purchase price in setter.");
 }
 
 void testCutRequestAllowedMaterialAndProfileRules() {
@@ -173,7 +174,8 @@ void testStockBarConsume() {
     require(bar.consume(1200.0), "StockBar should consume valid length.");
     requireDouble(bar.getRemainingLength(), 4800.0,
                   "StockBar remaining length is wrong.");
-    requireDouble(bar.getUsedLength(), 1200.0, "StockBar used length is wrong.");
+    requireDouble(bar.getUsedLength(), 1200.0,
+                  "StockBar used length is wrong.");
     require(!bar.consume(7000.0), "StockBar should reject oversized consume.");
     require(!bar.consume(0.0), "StockBar should reject zero consume.");
     require(!bar.consume(-1.0), "StockBar should reject negative consume.");
@@ -213,7 +215,8 @@ void testMaterialRepository() {
 
     repository.save(material);
 
-    require(repository.exists("mat1"), "MaterialRepository should find saved id.");
+    require(repository.exists("mat1"),
+            "MaterialRepository should find saved id.");
     require(repository.findAll().size() == 1,
             "MaterialRepository should contain one material.");
     require(repository.findById("mat1").has_value(),
@@ -227,9 +230,9 @@ void testMaterialRepository() {
             "MaterialRepository update failed.");
     requireThrows([&] { repository.save(updated); },
                   "MaterialRepository should reject duplicate ids.");
-    requireThrows([&] {
-        repository.update(Material("missing", "Missing", 1.0, true));
-    }, "MaterialRepository should reject update for missing id.");
+    requireThrows(
+        [&] { repository.update(Material("missing", "Missing", 1.0, true)); },
+        "MaterialRepository should reject update for missing id.");
     require(!repository.findById("missing").has_value(),
             "MaterialRepository should return nullopt for missing id.");
 }
@@ -237,8 +240,8 @@ void testMaterialRepository() {
 void testBarProfileRepository() {
     Material aluminum("mat1", "Aluminum", 3.0, true);
     Material steel("mat2", "Steel", 4.0, true);
-    BarProfile aluminumProfile("prof1", "Aluminum 40x20", "ALU-40-20",
-                               aluminum, 6000.0, 120.0);
+    BarProfile aluminumProfile("prof1", "Aluminum 40x20", "ALU-40-20", aluminum,
+                               6000.0, 120.0);
     BarProfile steelProfile("prof2", "Steel 40x20", "STEEL-40-20", steel,
                             6000.0, 160.0);
     BarProfile updated("prof1", "Updated Aluminum", "ALU-UPDATED", aluminum,
@@ -265,10 +268,12 @@ void testBarProfileRepository() {
             "BarProfileRepository update failed.");
     requireThrows([&] { repository.save(updated); },
                   "BarProfileRepository should reject duplicate ids.");
-    requireThrows([&] {
-        repository.update(BarProfile("missing", "Missing", "MISSING",
-                                     aluminum, 1000.0, 10.0));
-    }, "BarProfileRepository should reject update for missing id.");
+    requireThrows(
+        [&] {
+            repository.update(BarProfile("missing", "Missing", "MISSING",
+                                         aluminum, 1000.0, 10.0));
+        },
+        "BarProfileRepository should reject update for missing id.");
     require(!repository.findById("missing").has_value(),
             "BarProfileRepository should return nullopt for missing id.");
 }
@@ -339,8 +344,8 @@ void testRepositoryRejectsDuplicatesAndMissingUpdates() {
 void testStockBarRepositoryFilters() {
     Material aluminum("mat1", "Aluminum", 3.0, true);
     Material steel("mat2", "Steel", 4.0, true);
-    BarProfile aluminumProfile("prof1", "Aluminum 40x20", "ALU-40-20",
-                               aluminum, 6000.0, 120.0);
+    BarProfile aluminumProfile("prof1", "Aluminum 40x20", "ALU-40-20", aluminum,
+                               6000.0, 120.0);
     BarProfile steelProfile("prof2", "Steel 40x20", "STEEL-40-20", steel,
                             6000.0, 160.0);
 
@@ -371,8 +376,8 @@ void testStockBarRepositoryFilters() {
 
 void testInventoryServiceConsumeBarLength() {
     Material material("mat1", "Aluminum", 3.0, true);
-    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material,
-                       6000.0, 120.0);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 6000.0,
+                       120.0);
 
     InMemoryStockBarRepository repository;
     repository.save(
@@ -474,6 +479,96 @@ void testOptimizationPreparationFallsBackToGlobalProblem() {
             "Global optimization problem should include expanded pieces.");
 }
 
+void testOptimizationServiceFitsPiecesIntoOneBar() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 6000.0,
+                       120.0);
+
+    OptimizationProblem problem;
+    problem.materialId = "mat1";
+    problem.stockBars = {
+        StockBar("stock1", "BARCODE-0001", profile, 6000.0, 6000.0),
+    };
+    problem.pieces = {
+        CutPiece("piece1", "req1", 1200.0),
+        CutPiece("piece2", "req1", 1500.0),
+        CutPiece("piece3", "req1", 1000.0),
+    };
+
+    OptimizationService service;
+    CutPlan plan = service.optimize(problem);
+
+    require(plan.bars.size() == 1,
+            "OptimizationService should use one bar for fitting pieces.");
+    require(plan.bars[0].pieces.size() == 3,
+            "OptimizationService should assign all pieces to the bar.");
+    require(plan.unassignedPieces.empty(),
+            "OptimizationService should not leave fitting pieces unassigned.");
+    requireDouble(plan.bars[0].remainingLength, 2300.0,
+                  "OptimizationService remaining length is wrong.");
+    requireDouble(plan.totalWaste, 2300.0,
+                  "OptimizationService total waste is wrong.");
+}
+
+void testOptimizationServiceUsesMultipleBars() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 5000.0,
+                       120.0);
+
+    OptimizationProblem problem;
+    problem.materialId = "mat1";
+    problem.stockBars = {
+        StockBar("stock1", "BARCODE-0001", profile, 5000.0, 5000.0),
+        StockBar("stock2", "BARCODE-0002", profile, 5000.0, 5000.0),
+    };
+    problem.pieces = {
+        CutPiece("piece1", "req1", 3000.0),
+        CutPiece("piece2", "req1", 3000.0),
+        CutPiece("piece3", "req1", 2000.0),
+    };
+
+    OptimizationService service;
+    CutPlan plan = service.optimize(problem);
+
+    require(plan.bars.size() == 2,
+            "OptimizationService should use two bars when needed.");
+    require(plan.unassignedPieces.empty(),
+            "OptimizationService should assign all fitting pieces.");
+    requireDouble(plan.totalWaste, 2000.0,
+                  "OptimizationService total waste for two bars is wrong.");
+}
+
+void testOptimizationServiceLeavesOversizedPiecesUnassigned() {
+    Material material("mat1", "Aluminum", 3.0, true);
+    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", material, 5000.0,
+                       120.0);
+
+    OptimizationProblem problem;
+    problem.materialId = "mat1";
+    problem.stockBars = {
+        StockBar("stock1", "BARCODE-0001", profile, 5000.0, 5000.0),
+    };
+    problem.pieces = {
+        CutPiece("piece1", "req1", 6000.0),
+        CutPiece("piece2", "req1", 2000.0),
+    };
+
+    OptimizationService service;
+    CutPlan plan = service.optimize(problem);
+
+    require(plan.bars.size() == 1,
+            "OptimizationService should still use a bar for fitting pieces.");
+    require(plan.bars[0].pieces.size() == 1,
+            "OptimizationService should assign only fitting pieces.");
+    require(plan.unassignedPieces.size() == 1,
+            "OptimizationService should leave oversized piece unassigned.");
+    require(plan.unassignedPieces[0].getId() == "piece1",
+            "OptimizationService unassigned piece is wrong.");
+    requireDouble(
+        plan.totalWaste, 3000.0,
+        "OptimizationService total waste with unassigned piece is wrong.");
+}
+
 int main() {
     testDomainValidationRejectsInvalidValues();
     testMaterialAndBarProfileSetters();
@@ -495,6 +590,9 @@ int main() {
     testRequestPartitionerRejectsFlexibleMaterialRequests();
     testOptimizationPreparationService();
     testOptimizationPreparationFallsBackToGlobalProblem();
+    testOptimizationServiceFitsPiecesIntoOneBar();
+    testOptimizationServiceUsesMultipleBars();
+    testOptimizationServiceLeavesOversizedPiecesUnassigned();
 
     std::cout << "All tests passed.\n";
     return 0;
