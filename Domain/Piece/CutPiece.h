@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CutRequestItem.h"
+#include "Domain/CutRequest/CutRequestItem.h"
 #include <string>
 
 class CutPiece {

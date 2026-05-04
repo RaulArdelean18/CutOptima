@@ -1,6 +1,6 @@
 #pragma once
 
-#include "BarProfile.h"
+#include "Domain/BarProfile/BarProfile.h"
 #include <string>
 
 enum class StockBarStatus { AVAILABLE, RESERVED, USED, SCRAP };

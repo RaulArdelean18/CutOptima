@@ -1,26 +1,37 @@
 #include "CutPiece.h"
-#include "BarProfile.h"
-#include "CutRequestItem.h"
-#include "Material.h"
-#include "StockBar.h"
-#include <iostream>
+#include <stdexcept>
+#include <utility>
 
-int main() {
-    Material aluminum("mat1", "Aluminum", 3.0, true);
+CutPiece::CutPiece() : length(0.0) {}
 
-    BarProfile profile("prof1", "Aluminum 40x20", "ALU-40-20", aluminum, 6000.0,
-                       120.0);
+CutPiece::CutPiece(std::string id, std::string requestItemId, double length)
+    : id(std::move(id)), requestItemId(std::move(requestItemId)),
+      length(length) {
+    if (this->id.empty()) {
+        throw std::invalid_argument("CutPiece id cannot be empty.");
+    }
+    if (this->requestItemId.empty()) {
+        throw std::invalid_argument("CutPiece request item id cannot be empty.");
+    }
+    if (this->length <= 0) {
+        throw std::invalid_argument("CutPiece length must be positive.");
+    }
+}
 
-    StockBar stockBar("stock1", "BARCODE-0001", profile, 6000.0, 6000.0);
+const std::string &CutPiece::getId() const { return id; }
 
-    CutRequestItem requestItem("req1", 1200.0, 3, {"mat1"}, {"prof1"});
+const std::string &CutPiece::getRequestItemId() const { return requestItemId; }
 
-    CutPiece piece = CutPiece::fromRequestItem(requestItem, 0);
+double CutPiece::getLength() const { return length; }
 
-    std::cout << aluminum.getName() << '\n';
-    std::cout << profile.getName() << '\n';
-    std::cout << stockBar.getRemainingLength() << '\n';
-    std::cout << piece.getLength() << '\n';
-
-    return 0;
+CutPiece CutPiece::fromRequestItem(const CutRequestItem &item, int index) {
+    if (index < 0) {
+        throw std::invalid_argument("CutPiece index cannot be negative.");
+    }
+    if (index >= item.getQuantity()) {
+        throw std::invalid_argument(
+            "CutPiece index must be smaller than request item quantity.");
+    }
+    return CutPiece(item.getId() + "-" + std::to_string(index + 1),
+                    item.getId(), item.getRequiredLength());
 }
